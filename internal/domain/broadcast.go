@@ -885,7 +885,9 @@ func (r *RefreshGlobalFeedRequest) Validate() error {
 		return fmt.Errorf("url is required")
 	}
 
-	// Basic URL format check (no SSRF protection needed for test endpoint)
+	// Basic URL format check. SSRF protection (blocking private/loopback/link-local
+	// targets and re-validating redirects) is enforced at fetch time by the data-feed
+	// HTTP client; see broadcast.NewDataFeedFetcher and pkg/safehttpclient.
 	parsedURL, err := url.Parse(r.URL)
 	if err != nil {
 		return fmt.Errorf("url: invalid URL: %s", err.Error())
@@ -946,7 +948,9 @@ func (r *TestRecipientFeedRequest) Validate() error {
 		return fmt.Errorf("url is required")
 	}
 
-	// Basic URL format check (no SSRF protection needed for test endpoint)
+	// Basic URL format check. SSRF protection (blocking private/loopback/link-local
+	// targets and re-validating redirects) is enforced at fetch time by the data-feed
+	// HTTP client; see broadcast.NewDataFeedFetcher and pkg/safehttpclient.
 	parsedURL, err := url.Parse(r.URL)
 	if err != nil {
 		return fmt.Errorf("url: invalid URL: %s", err.Error())

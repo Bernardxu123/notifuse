@@ -372,13 +372,14 @@ func (s *WorkspaceService) UpdateWorkspace(ctx context.Context, id string, name 
 	}
 
 	existingWorkspace.Settings.CustomEndpointURL = settings.CustomEndpointURL
-	// Note: Custom field labels are intentionally NOT updated here. They are managed
-	// exclusively via the dedicated /api/workspaces.setCustomFieldLabels endpoint, which
-	// enforces granular workspace:write permission instead of requiring owner role. This
-	// also prevents an owner's (possibly stale) settings save from clobbering labels set
-	// by a member. Existing labels on existingWorkspace are preserved as-is.
-	existingWorkspace.Settings.BlogEnabled = settings.BlogEnabled
-	existingWorkspace.Settings.BlogSettings = settings.BlogSettings
+	// Note: Custom field labels and blog settings are intentionally NOT updated here.
+	// They are each managed exclusively via dedicated, permission-checked endpoints
+	// (/api/workspaces.setCustomFieldLabels for labels, /api/workspaces.setBlogSettings
+	// for the blog enable flag + config), which enforce granular permissions
+	// (workspace:write and blog:write respectively) instead of requiring owner role.
+	// This also prevents an owner's (possibly stale) settings save from clobbering
+	// values set by a member. Existing labels and blog settings on existingWorkspace
+	// are preserved as-is.
 	existingWorkspace.Settings.DefaultLanguage = settings.DefaultLanguage
 	existingWorkspace.Settings.Languages = settings.Languages
 
@@ -863,6 +864,53 @@ func (s *WorkspaceService) SetCustomFieldLabels(ctx context.Context, workspaceID
 
 	if err := s.repo.Update(ctx, existingWorkspace); err != nil {
 		s.logger.WithField("workspace_id", workspaceID).WithField("error", err.Error()).Error("Failed to update custom field labels")
+		return err
+	}
+
+	return nil
+}
+
+// SetBlogSettings updates the workspace-level blog configuration (the enable flag
+// plus title/SEO/pagination/feed settings). Unlike UpdateWorkspace (owner-only),
+// this is gated on the granular blog:write permission so a delegated blog manager
+// can manage blog config. It loads the workspace and mutates only the blog fields,
+// preserving all other settings.
+func (s *WorkspaceService) SetBlogSettings(ctx context.Context, workspaceID string, enabled bool, settings *domain.BlogSettings) error {
+	var userWorkspace *domain.UserWorkspace
+	var err error
+	ctx, _, userWorkspace, err = s.authService.AuthenticateUserForWorkspace(ctx, workspaceID)
+	if err != nil {
+		return fmt.Errorf("failed to authenticate user: %w", err)
+	}
+
+	// Blog settings follow the blog feature's own permission, not workspace:write.
+	if !userWorkspace.HasPermission(domain.PermissionResourceBlog, domain.PermissionTypeWrite) {
+		return domain.NewPermissionError(
+			domain.PermissionResourceBlog,
+			domain.PermissionTypeWrite,
+			"Insufficient permissions: write access to blog required",
+		)
+	}
+
+	// Load the existing workspace and update only the blog fields, preserving all
+	// other settings.
+	existingWorkspace, err := s.repo.GetByID(ctx, workspaceID)
+	if err != nil {
+		s.logger.WithField("workspace_id", workspaceID).WithField("error", err.Error()).Error("Failed to get existing workspace")
+		return err
+	}
+
+	existingWorkspace.Settings.BlogEnabled = enabled
+	existingWorkspace.Settings.BlogSettings = settings
+
+	// Canonical validation (covers non-console API consumers too). Validate has a
+	// nil-receiver guard, so a nil settings (disable/clear) is fine.
+	if err := existingWorkspace.Settings.BlogSettings.Validate(); err != nil {
+		return err
+	}
+
+	if err := s.repo.Update(ctx, existingWorkspace); err != nil {
+		s.logger.WithField("workspace_id", workspaceID).WithField("error", err.Error()).Error("Failed to update blog settings")
 		return err
 	}
 

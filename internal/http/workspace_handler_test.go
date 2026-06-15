@@ -2953,6 +2953,137 @@ func TestWorkspaceHandler_HandleSetCustomFieldLabels(t *testing.T) {
 	})
 }
 
+func TestWorkspaceHandler_HandleSetBlogSettings(t *testing.T) {
+	_, workspaceSvc, mux, secretKey, _ := setupTest(t)
+
+	validBody := domain.SetBlogSettingsRequest{
+		WorkspaceID:  "workspace123",
+		BlogEnabled:  true,
+		BlogSettings: &domain.BlogSettings{Title: "My Blog"},
+	}
+
+	t.Run("successful update", func(t *testing.T) {
+		workspaceSvc.EXPECT().
+			SetBlogSettings(gomock.Any(), "workspace123", true, gomock.Any()).
+			DoAndReturn(func(_ context.Context, _ string, enabled bool, settings *domain.BlogSettings) error {
+				assert.True(t, enabled)
+				assert.Equal(t, "My Blog", settings.Title)
+				return nil
+			})
+
+		body, err := json.Marshal(validBody)
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/workspaces.setBlogSettings", bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+createTestToken(t, secretKey, "test-user"))
+
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		var response map[string]string
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&response))
+		assert.Equal(t, "success", response["status"])
+		assert.Equal(t, "Blog settings updated successfully", response["message"])
+	})
+
+	t.Run("method not allowed", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/workspaces.setBlogSettings", nil)
+		req.Header.Set("Authorization", "Bearer "+createTestToken(t, secretKey, "test-user"))
+
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+	})
+
+	t.Run("invalid request body", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/workspaces.setBlogSettings", strings.NewReader("invalid json"))
+		req.Header.Set("Authorization", "Bearer "+createTestToken(t, secretKey, "test-user"))
+
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		var response map[string]string
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&response))
+		assert.Equal(t, "Invalid request body", response["error"])
+	})
+
+	t.Run("validation error - missing workspace_id", func(t *testing.T) {
+		body, err := json.Marshal(domain.SetBlogSettingsRequest{
+			BlogEnabled: true,
+		})
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/workspaces.setBlogSettings", bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+createTestToken(t, secretKey, "test-user"))
+
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		var response map[string]string
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&response))
+		assert.Contains(t, response["error"], "workspace_id is required")
+	})
+
+	t.Run("validation error - invalid blog settings", func(t *testing.T) {
+		body, err := json.Marshal(domain.SetBlogSettingsRequest{
+			WorkspaceID:  "workspace123",
+			BlogEnabled:  true,
+			BlogSettings: &domain.BlogSettings{HomePageSize: 999},
+		})
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/workspaces.setBlogSettings", bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+createTestToken(t, secretKey, "test-user"))
+
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		var response map[string]string
+		require.NoError(t, json.NewDecoder(w.Body).Decode(&response))
+		assert.Contains(t, response["error"], "home_page_size must be between 1 and 100")
+	})
+
+	t.Run("permission denied returns 403", func(t *testing.T) {
+		permErr := domain.NewPermissionError(domain.PermissionResourceBlog, domain.PermissionTypeWrite, "Insufficient permissions: write access to blog required")
+		workspaceSvc.EXPECT().
+			SetBlogSettings(gomock.Any(), "workspace123", true, gomock.Any()).
+			Return(permErr)
+
+		body, err := json.Marshal(validBody)
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/workspaces.setBlogSettings", bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+createTestToken(t, secretKey, "test-user"))
+
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusForbidden, w.Code)
+	})
+
+	t.Run("internal error returns 500", func(t *testing.T) {
+		workspaceSvc.EXPECT().
+			SetBlogSettings(gomock.Any(), "workspace123", true, gomock.Any()).
+			Return(assert.AnError)
+
+		body, err := json.Marshal(validBody)
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/workspaces.setBlogSettings", bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+createTestToken(t, secretKey, "test-user"))
+
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+	})
+}
+
 func TestWorkspaceHandler_HandleSetUserPermissions(t *testing.T) {
 	_, workspaceSvc, mux, secretKey, _ := setupTest(t)
 

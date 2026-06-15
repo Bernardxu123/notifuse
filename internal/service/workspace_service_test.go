@@ -882,6 +882,237 @@ func TestWorkspaceService_SetCustomFieldLabels(t *testing.T) {
 	})
 }
 
+func TestWorkspaceService_SetBlogSettings(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockRepo := mocks.NewMockWorkspaceRepository(ctrl)
+	mockUserRepo := mocks.NewMockUserRepository(ctrl)
+	mockLogger := pkgmocks.NewMockLogger(ctrl)
+	mockUserService := mocks.NewMockUserServiceInterface(ctrl)
+	mockAuthService := mocks.NewMockAuthService(ctrl)
+	mockMailer := pkgmocks.NewMockMailer(ctrl)
+	mockConfig := &config.Config{RootEmail: "test@example.com"}
+	mockContactService := mocks.NewMockContactService(ctrl)
+	mockListService := mocks.NewMockListService(ctrl)
+	mockContactListService := mocks.NewMockContactListService(ctrl)
+	mockTemplateService := mocks.NewMockTemplateService(ctrl)
+	mockWebhookRegService := mocks.NewMockWebhookRegistrationService(ctrl)
+
+	service := NewWorkspaceService(
+		mockRepo,
+		mockUserRepo,
+		mocks.NewMockTaskRepository(ctrl),
+		mockLogger,
+		mockUserService,
+		mockAuthService,
+		mockMailer,
+		mockConfig,
+		mockContactService,
+		mockListService,
+		mockContactListService,
+		mockTemplateService,
+		mockWebhookRegService,
+		"secret_key",
+		&SupabaseService{},
+		&DNSVerificationService{},
+		&BlogService{},
+	)
+
+	mockLogger.EXPECT().WithField(gomock.Any(), gomock.Any()).Return(mockLogger).AnyTimes()
+	mockLogger.EXPECT().Error(gomock.Any()).AnyTimes()
+
+	ctx := context.Background()
+	workspaceID := "testworkspace"
+	userID := "testuser"
+	settings := &domain.BlogSettings{Title: "My Blog", HomePageSize: 10}
+
+	t.Run("owner can set blog settings", func(t *testing.T) {
+		ownerWorkspace := &domain.UserWorkspace{UserID: userID, WorkspaceID: workspaceID, Role: "owner"}
+		existing := &domain.Workspace{ID: workspaceID, Name: "WS", Settings: domain.WorkspaceSettings{Timezone: "UTC"}}
+
+		mockAuthService.EXPECT().AuthenticateUserForWorkspace(ctx, workspaceID).Return(ctx, &domain.User{ID: userID}, ownerWorkspace, nil)
+		mockRepo.EXPECT().GetByID(ctx, workspaceID).Return(existing, nil)
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).DoAndReturn(func(_ context.Context, ws *domain.Workspace) error {
+			assert.True(t, ws.Settings.BlogEnabled)
+			assert.Equal(t, settings, ws.Settings.BlogSettings)
+			return nil
+		})
+
+		err := service.SetBlogSettings(ctx, workspaceID, true, settings)
+		require.NoError(t, err)
+	})
+
+	t.Run("member with blog write can set blog settings (the fix)", func(t *testing.T) {
+		memberWorkspace := &domain.UserWorkspace{
+			UserID:      userID,
+			WorkspaceID: workspaceID,
+			Role:        "member",
+			Permissions: domain.UserPermissions{
+				domain.PermissionResourceBlog: {Read: true, Write: true},
+			},
+		}
+		existing := &domain.Workspace{ID: workspaceID, Name: "WS", Settings: domain.WorkspaceSettings{Timezone: "UTC"}}
+
+		mockAuthService.EXPECT().AuthenticateUserForWorkspace(ctx, workspaceID).Return(ctx, &domain.User{ID: userID}, memberWorkspace, nil)
+		mockRepo.EXPECT().GetByID(ctx, workspaceID).Return(existing, nil)
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).DoAndReturn(func(_ context.Context, ws *domain.Workspace) error {
+			assert.True(t, ws.Settings.BlogEnabled)
+			assert.Equal(t, settings, ws.Settings.BlogSettings)
+			return nil
+		})
+
+		err := service.SetBlogSettings(ctx, workspaceID, true, settings)
+		require.NoError(t, err)
+	})
+
+	t.Run("member with full permissions can set blog settings", func(t *testing.T) {
+		memberWorkspace := &domain.UserWorkspace{
+			UserID:      userID,
+			WorkspaceID: workspaceID,
+			Role:        "member",
+			Permissions: domain.FullPermissions,
+		}
+		existing := &domain.Workspace{ID: workspaceID, Name: "WS", Settings: domain.WorkspaceSettings{Timezone: "UTC"}}
+
+		mockAuthService.EXPECT().AuthenticateUserForWorkspace(ctx, workspaceID).Return(ctx, &domain.User{ID: userID}, memberWorkspace, nil)
+		mockRepo.EXPECT().GetByID(ctx, workspaceID).Return(existing, nil)
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).Return(nil)
+
+		err := service.SetBlogSettings(ctx, workspaceID, true, settings)
+		require.NoError(t, err)
+	})
+
+	t.Run("member with blog read only is denied", func(t *testing.T) {
+		memberWorkspace := &domain.UserWorkspace{
+			UserID:      userID,
+			WorkspaceID: workspaceID,
+			Role:        "member",
+			Permissions: domain.UserPermissions{
+				domain.PermissionResourceBlog: {Read: true, Write: false},
+			},
+		}
+
+		mockAuthService.EXPECT().AuthenticateUserForWorkspace(ctx, workspaceID).Return(ctx, &domain.User{ID: userID}, memberWorkspace, nil)
+		// No GetByID / Update expected.
+
+		err := service.SetBlogSettings(ctx, workspaceID, true, settings)
+		require.Error(t, err)
+		var permErr *domain.PermissionError
+		assert.ErrorAs(t, err, &permErr)
+	})
+
+	t.Run("member with only contacts permission is denied", func(t *testing.T) {
+		memberWorkspace := &domain.UserWorkspace{
+			UserID:      userID,
+			WorkspaceID: workspaceID,
+			Role:        "member",
+			Permissions: domain.UserPermissions{
+				domain.PermissionResourceContacts: {Read: true, Write: true},
+			},
+		}
+
+		mockAuthService.EXPECT().AuthenticateUserForWorkspace(ctx, workspaceID).Return(ctx, &domain.User{ID: userID}, memberWorkspace, nil)
+
+		err := service.SetBlogSettings(ctx, workspaceID, true, settings)
+		require.Error(t, err)
+		var permErr *domain.PermissionError
+		assert.ErrorAs(t, err, &permErr)
+	})
+
+	t.Run("member with nil permissions is denied", func(t *testing.T) {
+		memberWorkspace := &domain.UserWorkspace{
+			UserID:      userID,
+			WorkspaceID: workspaceID,
+			Role:        "member",
+			Permissions: nil,
+		}
+
+		mockAuthService.EXPECT().AuthenticateUserForWorkspace(ctx, workspaceID).Return(ctx, &domain.User{ID: userID}, memberWorkspace, nil)
+
+		err := service.SetBlogSettings(ctx, workspaceID, true, settings)
+		require.Error(t, err)
+		var permErr *domain.PermissionError
+		assert.ErrorAs(t, err, &permErr)
+	})
+
+	t.Run("authentication failure returns error", func(t *testing.T) {
+		mockAuthService.EXPECT().AuthenticateUserForWorkspace(ctx, workspaceID).Return(ctx, nil, nil, assert.AnError)
+
+		err := service.SetBlogSettings(ctx, workspaceID, true, settings)
+		require.Error(t, err)
+	})
+
+	t.Run("get workspace error is propagated", func(t *testing.T) {
+		ownerWorkspace := &domain.UserWorkspace{UserID: userID, WorkspaceID: workspaceID, Role: "owner"}
+
+		mockAuthService.EXPECT().AuthenticateUserForWorkspace(ctx, workspaceID).Return(ctx, &domain.User{ID: userID}, ownerWorkspace, nil)
+		mockRepo.EXPECT().GetByID(ctx, workspaceID).Return(nil, assert.AnError)
+
+		err := service.SetBlogSettings(ctx, workspaceID, true, settings)
+		require.Error(t, err)
+	})
+
+	t.Run("update error is propagated", func(t *testing.T) {
+		ownerWorkspace := &domain.UserWorkspace{UserID: userID, WorkspaceID: workspaceID, Role: "owner"}
+		existing := &domain.Workspace{ID: workspaceID, Name: "WS", Settings: domain.WorkspaceSettings{Timezone: "UTC"}}
+
+		mockAuthService.EXPECT().AuthenticateUserForWorkspace(ctx, workspaceID).Return(ctx, &domain.User{ID: userID}, ownerWorkspace, nil)
+		mockRepo.EXPECT().GetByID(ctx, workspaceID).Return(existing, nil)
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).Return(assert.AnError)
+
+		err := service.SetBlogSettings(ctx, workspaceID, true, settings)
+		require.Error(t, err)
+	})
+
+	t.Run("invalid settings rejected before update", func(t *testing.T) {
+		ownerWorkspace := &domain.UserWorkspace{UserID: userID, WorkspaceID: workspaceID, Role: "owner"}
+		existing := &domain.Workspace{ID: workspaceID, Name: "WS", Settings: domain.WorkspaceSettings{Timezone: "UTC"}}
+
+		mockAuthService.EXPECT().AuthenticateUserForWorkspace(ctx, workspaceID).Return(ctx, &domain.User{ID: userID}, ownerWorkspace, nil)
+		mockRepo.EXPECT().GetByID(ctx, workspaceID).Return(existing, nil)
+		// No Update expected — validation fails first.
+
+		err := service.SetBlogSettings(ctx, workspaceID, true, &domain.BlogSettings{HomePageSize: 999})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "home_page_size must be between 1 and 100")
+	})
+
+	t.Run("disable clears blog settings and preserves other settings", func(t *testing.T) {
+		ownerWorkspace := &domain.UserWorkspace{UserID: userID, WorkspaceID: workspaceID, Role: "owner"}
+		existing := &domain.Workspace{
+			ID:   workspaceID,
+			Name: "WS",
+			Settings: domain.WorkspaceSettings{
+				WebsiteURL:        "https://example.com",
+				Timezone:          "Europe/Paris",
+				DefaultLanguage:   "en",
+				FileManager:       domain.FileManagerSettings{Bucket: "my-bucket", AccessKey: "AKIA"},
+				CustomFieldLabels: map[string]string{"custom_string_1": "Keep Me"},
+				BlogEnabled:       true,
+				BlogSettings:      &domain.BlogSettings{Title: "Old Blog"},
+			},
+		}
+
+		mockAuthService.EXPECT().AuthenticateUserForWorkspace(ctx, workspaceID).Return(ctx, &domain.User{ID: userID}, ownerWorkspace, nil)
+		mockRepo.EXPECT().GetByID(ctx, workspaceID).Return(existing, nil)
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).DoAndReturn(func(_ context.Context, ws *domain.Workspace) error {
+			// Blog disabled and cleared.
+			assert.False(t, ws.Settings.BlogEnabled)
+			assert.Nil(t, ws.Settings.BlogSettings)
+			// Other settings preserved untouched.
+			assert.Equal(t, "https://example.com", ws.Settings.WebsiteURL)
+			assert.Equal(t, "Europe/Paris", ws.Settings.Timezone)
+			assert.Equal(t, "my-bucket", ws.Settings.FileManager.Bucket)
+			assert.Equal(t, map[string]string{"custom_string_1": "Keep Me"}, ws.Settings.CustomFieldLabels)
+			return nil
+		})
+
+		err := service.SetBlogSettings(ctx, workspaceID, false, nil)
+		require.NoError(t, err)
+	})
+}
+
 func TestWorkspaceService_UpdateWorkspace(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -1129,6 +1360,60 @@ func TestWorkspaceService_UpdateWorkspace(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotNil(t, workspace)
 		assert.Equal(t, existingLabels, workspace.Settings.CustomFieldLabels)
+	})
+
+	t.Run("preserves blog settings and ignores request blog fields", func(t *testing.T) {
+		// Blog settings are managed exclusively via SetBlogSettings. UpdateWorkspace
+		// must NOT modify them: it preserves the blog config already stored on the
+		// workspace and ignores any blog fields passed in the update request (prevents
+		// a stale owner save from clobbering blog config set by a member with blog:write).
+		expectedUser := &domain.User{ID: userID}
+		expectedUserWorkspace := &domain.UserWorkspace{
+			UserID:      userID,
+			WorkspaceID: workspaceID,
+			Role:        "owner",
+		}
+
+		// Blog config already stored on the workspace (set via the dedicated endpoint).
+		existingBlog := &domain.BlogSettings{Title: "Member's Blog"}
+
+		// The update request asks to disable the blog and change its title — both IGNORED.
+		settings := domain.WorkspaceSettings{
+			WebsiteURL:      "https://example.com",
+			Timezone:        "UTC",
+			DefaultLanguage: "en",
+			Languages:       []string{"en"},
+			BlogEnabled:     false,
+			BlogSettings:    &domain.BlogSettings{Title: "From Request"},
+		}
+
+		existingWorkspace := &domain.Workspace{
+			ID:   workspaceID,
+			Name: "Original Workspace Name",
+			Settings: domain.WorkspaceSettings{
+				WebsiteURL:   "https://old-example.com",
+				BlogEnabled:  true,
+				BlogSettings: existingBlog,
+			},
+			CreatedAt: time.Now().Add(-24 * time.Hour),
+			UpdatedAt: time.Now().Add(-24 * time.Hour),
+		}
+
+		mockAuthService.EXPECT().AuthenticateUserForWorkspace(ctx, workspaceID).Return(ctx, expectedUser, nil, nil)
+		mockRepo.EXPECT().GetUserWorkspace(ctx, userID, workspaceID).Return(expectedUserWorkspace, nil)
+		mockRepo.EXPECT().GetByID(ctx, workspaceID).Return(existingWorkspace, nil)
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).DoAndReturn(func(ctx context.Context, workspace *domain.Workspace) error {
+			// Existing blog config preserved, request blog fields ignored.
+			assert.True(t, workspace.Settings.BlogEnabled)
+			assert.Equal(t, existingBlog, workspace.Settings.BlogSettings)
+			return nil
+		})
+
+		workspace, err := service.UpdateWorkspace(ctx, workspaceID, "Updated Workspace", settings)
+		require.NoError(t, err)
+		assert.NotNil(t, workspace)
+		assert.True(t, workspace.Settings.BlogEnabled)
+		assert.Equal(t, existingBlog, workspace.Settings.BlogSettings)
 	})
 
 	t.Run("preserves template blocks when not provided", func(t *testing.T) {

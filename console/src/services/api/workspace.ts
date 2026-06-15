@@ -389,6 +389,17 @@ export interface SetCustomFieldLabelsResponse {
   message: string
 }
 
+export interface SetBlogSettingsRequest {
+  workspace_id: string
+  blog_enabled: boolean
+  blog_settings?: BlogSettings
+}
+
+export interface SetBlogSettingsResponse {
+  status: string
+  message: string
+}
+
 // Invitation types
 export interface WorkspaceInvitation {
   id: string
@@ -492,5 +503,8 @@ export const workspaceService = {
     api.post<SetUserPermissionsResponse>('/api/workspaces.setUserPermissions', data),
 
   setCustomFieldLabels: (data: SetCustomFieldLabelsRequest) =>
-    api.post<SetCustomFieldLabelsResponse>('/api/workspaces.setCustomFieldLabels', data)
+    api.post<SetCustomFieldLabelsResponse>('/api/workspaces.setCustomFieldLabels', data),
+
+  setBlogSettings: (data: SetBlogSettingsRequest) =>
+    api.post<SetBlogSettingsResponse>('/api/workspaces.setBlogSettings', data)
 }

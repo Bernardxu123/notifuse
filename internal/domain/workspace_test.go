@@ -3485,6 +3485,175 @@ func TestSetCustomFieldLabelsRequest_Validate(t *testing.T) {
 	}
 }
 
+func TestBlogSettings_Validate(t *testing.T) {
+	testCases := []struct {
+		name     string
+		settings *BlogSettings
+		wantErr  bool
+		errMsg   string
+	}{
+		{name: "nil settings is valid", settings: nil, wantErr: false},
+		{name: "empty settings is valid", settings: &BlogSettings{}, wantErr: false},
+		{
+			name:     "valid settings within bounds",
+			settings: &BlogSettings{Title: "My Blog", HomePageSize: 20, CategoryPageSize: 10, FeedMaxItems: 15},
+			wantErr:  false,
+		},
+		{
+			name:     "zero sizes are treated as unset and valid",
+			settings: &BlogSettings{HomePageSize: 0, CategoryPageSize: 0, FeedMaxItems: 0},
+			wantErr:  false,
+		},
+		{
+			name:     "title at max length (255) is valid",
+			settings: &BlogSettings{Title: strings.Repeat("a", 255)},
+			wantErr:  false,
+		},
+		{
+			name:     "title too long",
+			settings: &BlogSettings{Title: strings.Repeat("a", 256)},
+			wantErr:  true,
+			errMsg:   "blog title exceeds maximum length",
+		},
+		{
+			name:     "home page size over maximum",
+			settings: &BlogSettings{HomePageSize: 101},
+			wantErr:  true,
+			errMsg:   "home_page_size must be between 1 and 100",
+		},
+		{
+			name:     "category page size over maximum",
+			settings: &BlogSettings{CategoryPageSize: 101},
+			wantErr:  true,
+			errMsg:   "category_page_size must be between 1 and 100",
+		},
+		{
+			name:     "feed max items over cap",
+			settings: &BlogSettings{FeedMaxItems: 21},
+			wantErr:  true,
+			errMsg:   "feed_max_items must be between 1 and 20",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.settings.Validate()
+			if tc.wantErr {
+				assert.Error(t, err)
+				if tc.errMsg != "" {
+					assert.Contains(t, err.Error(), tc.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestSetBlogSettingsRequest_Validate(t *testing.T) {
+	testCases := []struct {
+		name         string
+		request      SetBlogSettingsRequest
+		wantErr      bool
+		errMsg       string
+		wantEnabled  bool
+		wantSettings *BlogSettings
+	}{
+		{
+			name: "valid request with settings",
+			request: SetBlogSettingsRequest{
+				WorkspaceID:  "workspace123",
+				BlogEnabled:  true,
+				BlogSettings: &BlogSettings{Title: "My Blog", HomePageSize: 10},
+			},
+			wantErr:      false,
+			wantEnabled:  true,
+			wantSettings: &BlogSettings{Title: "My Blog", HomePageSize: 10},
+		},
+		{
+			name: "nil settings disables blog and is valid",
+			request: SetBlogSettingsRequest{
+				WorkspaceID:  "workspace123",
+				BlogEnabled:  false,
+				BlogSettings: nil,
+			},
+			wantErr:      false,
+			wantEnabled:  false,
+			wantSettings: nil,
+		},
+		{
+			name: "missing workspace ID",
+			request: SetBlogSettingsRequest{
+				WorkspaceID:  "",
+				BlogEnabled:  true,
+				BlogSettings: &BlogSettings{Title: "My Blog"},
+			},
+			wantErr: true,
+			errMsg:  "workspace_id is required",
+		},
+		{
+			name: "non-alphanumeric workspace ID",
+			request: SetBlogSettingsRequest{
+				WorkspaceID:  "workspace-123",
+				BlogEnabled:  true,
+				BlogSettings: &BlogSettings{Title: "My Blog"},
+			},
+			wantErr: true,
+			errMsg:  "workspace_id must be alphanumeric",
+		},
+		{
+			name: "workspace ID too long",
+			request: SetBlogSettingsRequest{
+				WorkspaceID:  strings.Repeat("a", 33),
+				BlogEnabled:  true,
+				BlogSettings: &BlogSettings{Title: "My Blog"},
+			},
+			wantErr: true,
+			errMsg:  "workspace_id length must be between 1 and 32",
+		},
+		{
+			name: "invalid home page size in settings",
+			request: SetBlogSettingsRequest{
+				WorkspaceID:  "workspace123",
+				BlogEnabled:  true,
+				BlogSettings: &BlogSettings{HomePageSize: 200},
+			},
+			wantErr: true,
+			errMsg:  "home_page_size must be between 1 and 100",
+		},
+		{
+			name: "title too long in settings",
+			request: SetBlogSettingsRequest{
+				WorkspaceID:  "workspace123",
+				BlogEnabled:  true,
+				BlogSettings: &BlogSettings{Title: strings.Repeat("a", 256)},
+			},
+			wantErr: true,
+			errMsg:  "exceeds maximum length",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			workspaceID, enabled, settings, err := tc.request.Validate()
+			if tc.wantErr {
+				assert.Error(t, err)
+				if tc.errMsg != "" {
+					assert.Contains(t, err.Error(), tc.errMsg)
+				}
+				assert.Empty(t, workspaceID)
+				assert.False(t, enabled)
+				assert.Nil(t, settings)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.request.WorkspaceID, workspaceID)
+				assert.Equal(t, tc.wantEnabled, enabled)
+				assert.Equal(t, tc.wantSettings, settings)
+			}
+		})
+	}
+}
+
 func TestWorkspaceSettings_ValidateCustomFieldLabels(t *testing.T) {
 	testCases := []struct {
 		name      string

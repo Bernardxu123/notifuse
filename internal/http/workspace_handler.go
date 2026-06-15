@@ -58,6 +58,7 @@ func (h *WorkspaceHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("/api/workspaces.deleteInvitation", requireAuth(http.HandlerFunc(h.handleDeleteInvitation)))
 	mux.Handle("/api/workspaces.setUserPermissions", requireAuth(http.HandlerFunc(h.handleSetUserPermissions)))
 	mux.Handle("/api/workspaces.setCustomFieldLabels", requireAuth(http.HandlerFunc(h.handleSetCustomFieldLabels)))
+	mux.Handle("/api/workspaces.setBlogSettings", requireAuth(http.HandlerFunc(h.handleSetBlogSettings)))
 
 	// Public invitation routes (no authentication required)
 	mux.Handle("/api/workspaces.verifyInvitationToken", http.HandlerFunc(h.handleVerifyInvitationToken))
@@ -414,6 +415,48 @@ func (h *WorkspaceHandler) handleSetCustomFieldLabels(w http.ResponseWriter, r *
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":  "success",
 		"message": "Custom field labels updated successfully",
+	})
+}
+
+// handleSetBlogSettings handles the request to set workspace blog settings (the
+// enable flag plus title/SEO/pagination/feed config) via the dedicated, blog:write
+// gated endpoint. Unlike workspaces.update (owner-only), this lets a member with
+// blog:write manage blog configuration.
+func (h *WorkspaceHandler) handleSetBlogSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		WriteJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req domain.SetBlogSettingsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteJSONError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	workspaceID, enabled, settings, err := req.Validate()
+	if err != nil {
+		WriteJSONError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := h.workspaceService.SetBlogSettings(r.Context(), workspaceID, enabled, settings); err != nil {
+		if _, ok := err.(*domain.PermissionError); ok {
+			WriteJSONError(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		if _, ok := err.(*domain.ErrUnauthorized); ok {
+			WriteJSONError(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		h.logger.WithField("workspace_id", workspaceID).WithField("error", err.Error()).Error("Failed to set blog settings")
+		WriteJSONError(w, "Failed to set blog settings", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "success",
+		"message": "Blog settings updated successfully",
 	})
 }
 

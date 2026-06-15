@@ -247,6 +247,10 @@ func TestDataFeedRefreshGlobalFeed(t *testing.T) {
 	defer testutil.CleanupTestEnvironment()
 
 	suite := testutil.NewIntegrationTestSuite(t, func(cfg *config.Config) testutil.AppInterface {
+		// Allow loopback test servers: these tests exercise the data-feed feature
+		// against httptest servers, which bind to 127.0.0.1. Production blocks these
+		// by default; see TestDataFeedSSRFProtection for the secure-default behavior.
+		cfg.Broadcast.AllowPrivateDataFeedHosts = true
 		return app.NewApp(cfg)
 	})
 	defer suite.Cleanup()
@@ -393,6 +397,78 @@ func TestDataFeedRefreshGlobalFeed(t *testing.T) {
 	})
 }
 
+// TestDataFeedSSRFProtection verifies that, with the default secure configuration
+// (BROADCAST_DATA_FEED_ALLOW_PRIVATE_HOSTS off), the refresh-global-feed endpoint
+// refuses to fetch a private/loopback URL, and that the target is never contacted.
+func TestDataFeedSSRFProtection(t *testing.T) {
+	testutil.SkipIfShort(t)
+	testutil.SetupTestEnvironment()
+	defer testutil.CleanupTestEnvironment()
+
+	// NOTE: no AllowPrivateDataFeedHosts override here — this exercises the
+	// production-default SSRF protection.
+	suite := testutil.NewIntegrationTestSuite(t, func(cfg *config.Config) testutil.AppInterface {
+		return app.NewApp(cfg)
+	})
+	defer suite.Cleanup()
+
+	client := suite.APIClient
+	factory := suite.DataFactory
+
+	user, err := factory.CreateUser()
+	require.NoError(t, err)
+	workspace, err := factory.CreateWorkspace()
+	require.NoError(t, err)
+	err = factory.AddUserToWorkspace(user.ID, workspace.ID, "owner")
+	require.NoError(t, err)
+	_, err = factory.SetupWorkspaceWithSMTPProvider(workspace.ID)
+	require.NoError(t, err)
+
+	err = client.Login(user.Email, "password")
+	require.NoError(t, err)
+	client.SetWorkspaceID(workspace.ID)
+
+	// Loopback server that would leak data if the SSRF guard failed.
+	mockServer := NewMockFeedServer()
+	defer mockServer.Close()
+	mockServer.SetResponse(map[string]interface{}{"secret": "internal-data"})
+	mockServer.ClearRequests()
+
+	list, err := factory.CreateList(workspace.ID)
+	require.NoError(t, err)
+	broadcast, err := factory.CreateBroadcast(workspace.ID,
+		testutil.WithBroadcastAudience(domain.AudienceSettings{
+			List:                list.ID,
+			ExcludeUnsubscribed: true,
+		}),
+	)
+	require.NoError(t, err)
+
+	// Point the feed at the loopback mock server (a private address).
+	resp, err := client.RefreshGlobalFeed(map[string]interface{}{
+		"workspace_id": workspace.ID,
+		"broadcast_id": broadcast.ID,
+		"url":          mockServer.URL(),
+		"headers":      []interface{}{},
+	})
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	// The endpoint returns 200 with success:false for fetch errors.
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	err = json.NewDecoder(resp.Body).Decode(&result)
+	require.NoError(t, err)
+
+	assert.Equal(t, false, result["success"])
+	require.Contains(t, result, "error")
+	assert.Contains(t, result["error"], "private or reserved IP address")
+
+	// Strongest assertion: the SSRF target must never have been contacted.
+	assert.Empty(t, mockServer.GetRequests(), "SSRF-protected client must not connect to a private address")
+}
+
 // TestDataFeedTestRecipientFeed tests the test recipient feed endpoint
 func TestDataFeedTestRecipientFeed(t *testing.T) {
 	testutil.SkipIfShort(t)
@@ -400,6 +476,10 @@ func TestDataFeedTestRecipientFeed(t *testing.T) {
 	defer testutil.CleanupTestEnvironment()
 
 	suite := testutil.NewIntegrationTestSuite(t, func(cfg *config.Config) testutil.AppInterface {
+		// Allow loopback test servers: these tests exercise the data-feed feature
+		// against httptest servers, which bind to 127.0.0.1. Production blocks these
+		// by default; see TestDataFeedSSRFProtection for the secure-default behavior.
+		cfg.Broadcast.AllowPrivateDataFeedHosts = true
 		return app.NewApp(cfg)
 	})
 	defer suite.Cleanup()
@@ -538,6 +618,10 @@ func TestDataFeedCustomHeaders(t *testing.T) {
 	defer testutil.CleanupTestEnvironment()
 
 	suite := testutil.NewIntegrationTestSuite(t, func(cfg *config.Config) testutil.AppInterface {
+		// Allow loopback test servers: these tests exercise the data-feed feature
+		// against httptest servers, which bind to 127.0.0.1. Production blocks these
+		// by default; see TestDataFeedSSRFProtection for the secure-default behavior.
+		cfg.Broadcast.AllowPrivateDataFeedHosts = true
 		return app.NewApp(cfg)
 	})
 	defer suite.Cleanup()
@@ -618,6 +702,10 @@ func TestDataFeedTimeout(t *testing.T) {
 	defer testutil.CleanupTestEnvironment()
 
 	suite := testutil.NewIntegrationTestSuite(t, func(cfg *config.Config) testutil.AppInterface {
+		// Allow loopback test servers: these tests exercise the data-feed feature
+		// against httptest servers, which bind to 127.0.0.1. Production blocks these
+		// by default; see TestDataFeedSSRFProtection for the secure-default behavior.
+		cfg.Broadcast.AllowPrivateDataFeedHosts = true
 		return app.NewApp(cfg)
 	})
 	defer suite.Cleanup()
@@ -706,6 +794,10 @@ func TestDataFeedEmptyResponse(t *testing.T) {
 	defer testutil.CleanupTestEnvironment()
 
 	suite := testutil.NewIntegrationTestSuite(t, func(cfg *config.Config) testutil.AppInterface {
+		// Allow loopback test servers: these tests exercise the data-feed feature
+		// against httptest servers, which bind to 127.0.0.1. Production blocks these
+		// by default; see TestDataFeedSSRFProtection for the secure-default behavior.
+		cfg.Broadcast.AllowPrivateDataFeedHosts = true
 		return app.NewApp(cfg)
 	})
 	defer suite.Cleanup()
@@ -780,6 +872,10 @@ func TestDataFeedHTTPErrors(t *testing.T) {
 	defer testutil.CleanupTestEnvironment()
 
 	suite := testutil.NewIntegrationTestSuite(t, func(cfg *config.Config) testutil.AppInterface {
+		// Allow loopback test servers: these tests exercise the data-feed feature
+		// against httptest servers, which bind to 127.0.0.1. Production blocks these
+		// by default; see TestDataFeedSSRFProtection for the secure-default behavior.
+		cfg.Broadcast.AllowPrivateDataFeedHosts = true
 		return app.NewApp(cfg)
 	})
 	defer suite.Cleanup()
@@ -877,6 +973,10 @@ func TestDataFeedInvalidJSON(t *testing.T) {
 	defer testutil.CleanupTestEnvironment()
 
 	suite := testutil.NewIntegrationTestSuite(t, func(cfg *config.Config) testutil.AppInterface {
+		// Allow loopback test servers: these tests exercise the data-feed feature
+		// against httptest servers, which bind to 127.0.0.1. Production blocks these
+		// by default; see TestDataFeedSSRFProtection for the secure-default behavior.
+		cfg.Broadcast.AllowPrivateDataFeedHosts = true
 		return app.NewApp(cfg)
 	})
 	defer suite.Cleanup()
@@ -951,6 +1051,10 @@ func TestDataFeedDisabledFeed(t *testing.T) {
 	defer testutil.CleanupTestEnvironment()
 
 	suite := testutil.NewIntegrationTestSuite(t, func(cfg *config.Config) testutil.AppInterface {
+		// Allow loopback test servers: these tests exercise the data-feed feature
+		// against httptest servers, which bind to 127.0.0.1. Production blocks these
+		// by default; see TestDataFeedSSRFProtection for the secure-default behavior.
+		cfg.Broadcast.AllowPrivateDataFeedHosts = true
 		return app.NewApp(cfg)
 	})
 	defer suite.Cleanup()
@@ -1027,6 +1131,10 @@ func TestDataFeedRequestPayload(t *testing.T) {
 	defer testutil.CleanupTestEnvironment()
 
 	suite := testutil.NewIntegrationTestSuite(t, func(cfg *config.Config) testutil.AppInterface {
+		// Allow loopback test servers: these tests exercise the data-feed feature
+		// against httptest servers, which bind to 127.0.0.1. Production blocks these
+		// by default; see TestDataFeedSSRFProtection for the secure-default behavior.
+		cfg.Broadcast.AllowPrivateDataFeedHosts = true
 		return app.NewApp(cfg)
 	})
 	defer suite.Cleanup()
@@ -1117,6 +1225,10 @@ func TestDataFeed_CreateBroadcastViaAPI(t *testing.T) {
 	defer testutil.CleanupTestEnvironment()
 
 	suite := testutil.NewIntegrationTestSuite(t, func(cfg *config.Config) testutil.AppInterface {
+		// Allow loopback test servers: these tests exercise the data-feed feature
+		// against httptest servers, which bind to 127.0.0.1. Production blocks these
+		// by default; see TestDataFeedSSRFProtection for the secure-default behavior.
+		cfg.Broadcast.AllowPrivateDataFeedHosts = true
 		return app.NewApp(cfg)
 	})
 	defer suite.Cleanup()
@@ -1360,6 +1472,10 @@ func TestDataFeed_RecipientFeedFailure_PausesBroadcast(t *testing.T) {
 	defer testutil.CleanupTestEnvironment()
 
 	suite := testutil.NewIntegrationTestSuite(t, func(cfg *config.Config) testutil.AppInterface {
+		// Allow loopback test servers: these tests exercise the data-feed feature
+		// against httptest servers, which bind to 127.0.0.1. Production blocks these
+		// by default; see TestDataFeedSSRFProtection for the secure-default behavior.
+		cfg.Broadcast.AllowPrivateDataFeedHosts = true
 		return app.NewApp(cfg)
 	})
 	defer suite.Cleanup()
@@ -1504,6 +1620,10 @@ func TestDataFeed_UpdateBroadcastViaAPI(t *testing.T) {
 	defer testutil.CleanupTestEnvironment()
 
 	suite := testutil.NewIntegrationTestSuite(t, func(cfg *config.Config) testutil.AppInterface {
+		// Allow loopback test servers: these tests exercise the data-feed feature
+		// against httptest servers, which bind to 127.0.0.1. Production blocks these
+		// by default; see TestDataFeedSSRFProtection for the secure-default behavior.
+		cfg.Broadcast.AllowPrivateDataFeedHosts = true
 		return app.NewApp(cfg)
 	})
 	defer suite.Cleanup()

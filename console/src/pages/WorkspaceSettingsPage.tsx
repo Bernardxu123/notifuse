@@ -27,6 +27,7 @@ export function WorkspaceSettingsPage() {
   const [loadingMembers, setLoadingMembers] = useState(false)
   const [isOwner, setIsOwner] = useState(false)
   const [canManageCustomFields, setCanManageCustomFields] = useState(false)
+  const [canManageBlog, setCanManageBlog] = useState(false)
   const { refreshWorkspaces, user, workspaces } = useAuth()
   const navigate = useNavigate()
 
@@ -83,6 +84,12 @@ export function WorkspaceSettingsPage() {
         setCanManageCustomFields(
           currentUserMember?.role === 'owner' ||
             currentUserMember?.permissions?.workspace?.write === true
+        )
+        // Blog settings can be managed by owners or members with blog:write permission
+        // (mirrors the backend HasPermission(blog, write) check).
+        setCanManageBlog(
+          currentUserMember?.role === 'owner' ||
+            currentUserMember?.permissions?.blog?.write === true
         )
       }
     } catch (error) {
@@ -156,7 +163,7 @@ export function WorkspaceSettingsPage() {
           <BlogSettings
             workspace={workspace}
             onWorkspaceUpdate={handleWorkspaceUpdate}
-            isOwner={isOwner}
+            canManage={canManageBlog}
           />
         )
       case 'danger-zone':

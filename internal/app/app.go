@@ -695,8 +695,14 @@ func (a *App) InitServices() error {
 		a.logger,
 	)
 
-	// Initialize data feed fetcher for external data in broadcasts
-	a.dataFeedFetcher = broadcast.NewDataFeedFetcher(a.logger)
+	// Initialize data feed fetcher for external data in broadcasts.
+	// Uses an SSRF-protected HTTP client by default; private/loopback targets are
+	// only permitted when explicitly opted in via BROADCAST_DATA_FEED_ALLOW_PRIVATE_HOSTS.
+	if a.config.Broadcast.AllowPrivateDataFeedHosts {
+		a.dataFeedFetcher = broadcast.NewUnsafeDataFeedFetcher(a.logger)
+	} else {
+		a.dataFeedFetcher = broadcast.NewDataFeedFetcher(a.logger)
+	}
 
 	// Initialize broadcast service
 	a.broadcastService = service.NewBroadcastService(

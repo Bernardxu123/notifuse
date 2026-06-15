@@ -163,6 +163,12 @@ type SMTPBridgeConfig struct {
 
 type BroadcastConfig struct {
 	DefaultRateLimit int // Default rate limit per minute for broadcasts (0 means use service default)
+
+	// AllowPrivateDataFeedHosts disables SSRF protection on broadcast data-feed
+	// requests, allowing feeds to target private/loopback/link-local addresses.
+	// Off by default. Only enable in trusted, self-hosted deployments that
+	// intentionally fetch data feeds from services on their internal network.
+	AllowPrivateDataFeedHosts bool
 }
 
 type TaskSchedulerConfig struct {
@@ -817,7 +823,8 @@ func LoadWithOptions(opts LoadOptions) (*Config, error) {
 			PrometheusPort:  v.GetInt("TRACING_PROMETHEUS_PORT"),
 		},
 		Broadcast: BroadcastConfig{
-			DefaultRateLimit: v.GetInt("BROADCAST_DEFAULT_RATE_LIMIT"),
+			DefaultRateLimit:          v.GetInt("BROADCAST_DEFAULT_RATE_LIMIT"),
+			AllowPrivateDataFeedHosts: v.GetBool("BROADCAST_DATA_FEED_ALLOW_PRIVATE_HOSTS"),
 		},
 		TaskScheduler: TaskSchedulerConfig{
 			Enabled:  v.GetBool("TASK_SCHEDULER_ENABLED"),
