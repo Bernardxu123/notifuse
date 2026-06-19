@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [33.2] - 2026-06-19
+
+- **Feature**: Google Gemini is now a selectable LLM provider for the AI agent (blog & email generation), alongside Anthropic and OpenAI — configure it under Settings → Integrations with a Gemini API key and model (default Gemini 3.1 Pro); when multiple LLM integrations are configured, a provider dropdown in the AI chat selects which to use.
+
+## [33.1] - 2026-06-19
+
+- **Feature**: Search broadcasts by name and filter by status on the broadcasts list — a grouped status filter (All/Draft/Scheduled/Sending/Sent/Failed) plus a debounced name search beside it, both persisted in the URL; the `broadcasts.list` API now accepts multiple statuses and a name search (#335).
+
 ## [33.0] - 2026-06-16
 
 ### Database Schema Changes

@@ -1406,7 +1406,9 @@ export function Integrations({ workspace, onSave, loading, isOwner }: Integratio
                       <Tag bordered={false} color="purple">
                         {provider.kind === 'openai'
                           ? provider.openai?.model || 'Not configured'
-                          : provider.anthropic?.model || 'Not configured'}
+                          : provider.kind === 'gemini'
+                            ? provider.gemini?.model || 'Not configured'
+                            : provider.anthropic?.model || 'Not configured'}
                       </Tag>
                     </Descriptions.Item>
                     {provider.kind === 'openai' && provider.openai?.base_url && (

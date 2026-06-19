@@ -1471,6 +1471,16 @@ func (s *WorkspaceService) UpdateIntegration(ctx context.Context, req domain.Upd
 				updatedIntegration.LLMProvider.OpenAI.EncryptedAPIKey =
 					existingIntegration.LLMProvider.OpenAI.EncryptedAPIKey
 			}
+
+			// Preserve Gemini encrypted API key if not provided in update
+			if req.LLMProvider.Gemini != nil &&
+				req.LLMProvider.Gemini.APIKey == "" &&
+				req.LLMProvider.Gemini.EncryptedAPIKey == "" &&
+				existingIntegration.LLMProvider != nil &&
+				existingIntegration.LLMProvider.Gemini != nil {
+				updatedIntegration.LLMProvider.Gemini.EncryptedAPIKey =
+					existingIntegration.LLMProvider.Gemini.EncryptedAPIKey
+			}
 		} else {
 			// If no settings provided, preserve existing
 			updatedIntegration.LLMProvider = existingIntegration.LLMProvider

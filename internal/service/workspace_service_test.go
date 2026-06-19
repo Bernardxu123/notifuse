@@ -2293,6 +2293,65 @@ func TestWorkspaceService_UpdateIntegration(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	t.Run("successful update gemini LLM integration preserves API key", func(t *testing.T) {
+		geminiIntegrationID := "gemini123"
+		expectedUser := &domain.User{ID: userID}
+		expectedUserWorkspace := &domain.UserWorkspace{
+			UserID:      userID,
+			WorkspaceID: workspaceID,
+			Role:        "owner",
+		}
+
+		// Existing Gemini LLM integration with an encrypted key
+		existingIntegration := domain.Integration{
+			ID:   geminiIntegrationID,
+			Name: "Original Gemini",
+			Type: domain.IntegrationTypeLLM,
+			LLMProvider: &domain.LLMProvider{
+				Kind: domain.LLMProviderKindGemini,
+				Gemini: &domain.GeminiSettings{
+					EncryptedAPIKey: "encrypted-existing-gemini-key",
+					Model:           "gemini-2.5-flash",
+				},
+			},
+			CreatedAt: time.Now().Add(-24 * time.Hour),
+			UpdatedAt: time.Now().Add(-24 * time.Hour),
+		}
+
+		expectedWorkspace := &domain.Workspace{
+			ID:           workspaceID,
+			Name:         "Test Workspace",
+			Integrations: []domain.Integration{existingIntegration},
+		}
+
+		mockAuthService.EXPECT().AuthenticateUserForWorkspace(ctx, workspaceID).Return(ctx, expectedUser, expectedUserWorkspace, nil)
+		mockRepo.EXPECT().GetByID(ctx, workspaceID).Return(expectedWorkspace, nil)
+		mockRepo.EXPECT().Update(ctx, gomock.Any()).DoAndReturn(func(ctx context.Context, workspace *domain.Workspace) error {
+			require.Equal(t, 1, len(workspace.Integrations))
+			require.NotNil(t, workspace.Integrations[0].LLMProvider)
+			require.NotNil(t, workspace.Integrations[0].LLMProvider.Gemini)
+			// Model should be updated
+			require.Equal(t, "gemini-3.1-pro-preview", workspace.Integrations[0].LLMProvider.Gemini.Model)
+			// API key should be preserved since no new key was provided
+			require.Equal(t, "encrypted-existing-gemini-key", workspace.Integrations[0].LLMProvider.Gemini.EncryptedAPIKey)
+			return nil
+		})
+
+		err := service.UpdateIntegration(ctx, domain.UpdateIntegrationRequest{
+			WorkspaceID:   workspaceID,
+			IntegrationID: geminiIntegrationID,
+			Name:          "Updated Gemini",
+			LLMProvider: &domain.LLMProvider{
+				Kind: domain.LLMProviderKindGemini,
+				Gemini: &domain.GeminiSettings{
+					APIKey: "", // Empty - should preserve existing encrypted key
+					Model:  "gemini-3.1-pro-preview",
+				},
+			},
+		})
+		require.NoError(t, err)
+	})
+
 	t.Run("successful update firecrawl integration replaces API key", func(t *testing.T) {
 		firecrawlIntegrationID := "firecrawl456"
 		expectedUser := &domain.User{

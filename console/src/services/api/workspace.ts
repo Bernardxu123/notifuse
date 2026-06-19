@@ -156,7 +156,7 @@ export interface SendGridSettings {
 export type IntegrationType = 'email' | 'sms' | 'whatsapp' | 'supabase' | 'llm' | 'firecrawl'
 
 // LLM Provider types
-export type LLMProviderKind = 'anthropic' | 'openai'
+export type LLMProviderKind = 'anthropic' | 'openai' | 'gemini'
 
 export interface AnthropicSettings {
   api_key?: string
@@ -171,10 +171,17 @@ export interface OpenAISettings {
   base_url?: string
 }
 
+export interface GeminiSettings {
+  api_key?: string
+  encrypted_api_key?: string
+  model: string
+}
+
 export interface LLMProvider {
   kind: LLMProviderKind
   anthropic?: AnthropicSettings
   openai?: OpenAISettings
+  gemini?: GeminiSettings
 }
 
 // Firecrawl settings for web scraping and search
