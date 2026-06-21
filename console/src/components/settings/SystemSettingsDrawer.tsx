@@ -66,6 +66,8 @@ export function SystemSettingsDrawer() {
   }, [open, fetchSettings])
 
   const bridgeEnabled = Form.useWatch('smtp_bridge_enabled', form)
+  const oidcEnabled = Form.useWatch('oidc_enabled', form)
+  const oidcAutoCreate = Form.useWatch('oidc_auto_create_users', form)
 
   const isOverridden = (field: string) => envOverrides[field] === true
 
@@ -524,6 +526,130 @@ export function SystemSettingsDrawer() {
                     disabled={isOverridden('smtp_bridge_tls_key_base64')}
                     rows={3}
                     placeholder={t`Base64 encoded TLS private key`}
+                    allowClear
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+
+            <Divider />
+
+            {/* SSO (OIDC) */}
+            <Title level={5}>{t`SSO (OpenID Connect)`}</Title>
+            <Row gutter={16}>
+              <Col span={6}>
+                <Form.Item
+                  label={t`Enabled`}
+                  name="oidc_enabled"
+                  valuePropName="checked"
+                  help={renderEnvHint('oidc_enabled')}
+                >
+                  <Switch disabled={isOverridden('oidc_enabled')} />
+                </Form.Item>
+              </Col>
+              <Col span={18}>
+                <Form.Item
+                  label={t`Issuer URL`}
+                  name="oidc_issuer_url"
+                  rules={[
+                    { required: !!oidcEnabled, message: t`Required when SSO is enabled` },
+                    { type: 'url', message: t`Must be a valid https URL` }
+                  ]}
+                  help={renderEnvHint('oidc_issuer_url')}
+                >
+                  <Input
+                    disabled={isOverridden('oidc_issuer_url')}
+                    placeholder="https://accounts.google.com"
+                    allowClear
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item
+                  label={t`Client ID`}
+                  name="oidc_client_id"
+                  rules={[{ required: !!oidcEnabled, message: t`Required when SSO is enabled` }]}
+                  help={renderEnvHint('oidc_client_id')}
+                >
+                  <Input disabled={isOverridden('oidc_client_id')} allowClear />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  label={t`Client Secret`}
+                  name="oidc_client_secret"
+                  rules={[{ required: !!oidcEnabled, message: t`Required when SSO is enabled` }]}
+                  help={renderEnvHint('oidc_client_secret')}
+                >
+                  <Input.Password
+                    disabled={isOverridden('oidc_client_secret')}
+                    autoComplete="new-password"
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item
+                  label={t`Button Label`}
+                  name="oidc_button_label"
+                  help={renderEnvHint('oidc_button_label')}
+                >
+                  <Input
+                    disabled={isOverridden('oidc_button_label')}
+                    placeholder={t`Sign in with SSO`}
+                    allowClear
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  label={t`Scopes`}
+                  name="oidc_scopes"
+                  help={renderEnvHint('oidc_scopes')}
+                >
+                  <Input
+                    disabled={isOverridden('oidc_scopes')}
+                    placeholder="openid email profile"
+                    allowClear
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={16}>
+              <Col span={6}>
+                <Form.Item
+                  label={t`Auto-create users`}
+                  name="oidc_auto_create_users"
+                  valuePropName="checked"
+                  help={renderEnvHint('oidc_auto_create_users')}
+                >
+                  <Switch disabled={isOverridden('oidc_auto_create_users')} />
+                </Form.Item>
+              </Col>
+              <Col span={18}>
+                <Form.Item
+                  label={t`Allowed email domains`}
+                  name="oidc_allowed_domains"
+                  rules={[
+                    {
+                      required: !!oidcAutoCreate,
+                      message: t`Required when auto-create is enabled`
+                    }
+                  ]}
+                  help={
+                    renderEnvHint('oidc_allowed_domains') || (
+                      <Text type="secondary" style={{ fontSize: 11 }}>
+                        {t`Comma-separated. Only these domains may auto-create accounts.`}
+                      </Text>
+                    )
+                  }
+                >
+                  <Input
+                    disabled={isOverridden('oidc_allowed_domains')}
+                    placeholder="example.com, sub.example.com"
                     allowClear
                   />
                 </Form.Item>

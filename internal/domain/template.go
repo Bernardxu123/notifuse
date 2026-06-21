@@ -964,9 +964,13 @@ func BuildTemplateData(req TemplateDataRequest) (MapOfAny, error) {
 			req.TrackingSettings.Endpoint, unsubscribeParams.Encode())
 		templateData["unsubscribe_url"] = unsubscribeURL
 
-		// Build oneclick unsubscribe URL query params
+		// Build oneclick unsubscribe URL query params.
+		// email_hmac is required: the public /unsubscribe-oneclick endpoint has no
+		// bearer token, so ListService.UnsubscribeFromLists authenticates the request
+		// by verifying this HMAC against the workspace secret key (RFC 8058 one-click).
 		oneclickParams := url.Values{}
 		oneclickParams.Set("email", req.ContactWithList.Contact.Email)
+		oneclickParams.Set("email_hmac", emailHMAC)
 		oneclickParams.Set("lids", req.ContactWithList.ListID)
 		oneclickParams.Set("wid", req.WorkspaceID)
 		oneclickParams.Set("mid", req.MessageID)

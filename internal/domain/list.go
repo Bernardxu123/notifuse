@@ -337,6 +337,39 @@ func (r *UnsubscribeFromListsRequest) FromURLParams(queryParams url.Values) (err
 	return nil
 }
 
+// FromOneClickURLParams parses an RFC 8058 one-click unsubscribe request from the
+// List-Unsubscribe URL query string. Per RFC 8058 (section 2.1) the identifying
+// parameters are carried in the URL query, not in the POST body, so the handler
+// reads them from here and ignores the body. The keys match those emitted by
+// BuildTemplateData when it builds the one-click unsubscribe URL (wid, email,
+// email_hmac, lids, mid).
+//
+// email_hmac is deliberately not required here: authentication is owned by
+// ListService.UnsubscribeFromLists, which verifies the HMAC against the workspace
+// secret key. This method only validates that the request structurally identifies
+// a contact and list(s) to act on.
+func (r *UnsubscribeFromListsRequest) FromOneClickURLParams(queryParams url.Values) error {
+	r.WorkspaceID = queryParams.Get("wid")
+	r.Email = queryParams.Get("email")
+	r.EmailHMAC = queryParams.Get("email_hmac")
+	r.ListIDs = queryParams["lids"]
+	r.MessageID = queryParams.Get("mid")
+
+	if r.WorkspaceID == "" {
+		return fmt.Errorf("wid is required")
+	}
+
+	if r.Email == "" {
+		return fmt.Errorf("email is required")
+	}
+
+	if len(r.ListIDs) == 0 {
+		return fmt.Errorf("lids is required")
+	}
+
+	return nil
+}
+
 // ListService provides operations for managing lists
 type ListService interface {
 	// SubscribeToLists subscribes a contact to a list

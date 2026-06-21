@@ -2,10 +2,12 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -290,6 +292,12 @@ func TestNotificationCenterHandler_handleSubscribe(t *testing.T) {
 	}
 }
 
+// TestNotificationCenterHandler_handleUnsubscribeOneClick exercises the RFC 8058
+// one-click unsubscribe contract. Mail providers (Gmail, Yahoo, Apple) issue this
+// POST from their own infrastructure, so the endpoint must NOT apply browser-style
+// bot detection: a legitimate caller here is always automated. The request is
+// authorized by the HMAC in the query string; the RFC 8058 "List-Unsubscribe=One-Click"
+// body token is required as defense-in-depth against bare prefetch/scanner POSTs.
 func TestNotificationCenterHandler_handleUnsubscribeOneClick(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -299,117 +307,105 @@ func TestNotificationCenterHandler_handleUnsubscribeOneClick(t *testing.T) {
 	mockLogger := &mockLogger{}
 	handler := NewNotificationCenterHandler(mockService, mockListService, mockLogger, nil)
 
-	validRequest := domain.UnsubscribeFromListsRequest{
-		WorkspaceID: "ws123",
-		Email:       "test@example.com",
-		EmailHMAC:   "valid-hmac",
-		ListIDs:     []string{"list1", "list2"},
+	// Query string carries the identifying params + HMAC, as BuildTemplateData emits them.
+	const validQuery = "wid=ws123&email=test%40example.com&email_hmac=deadbeef&lids=list1&mid=msg-1"
+	const oneClickBody = "List-Unsubscribe=One-Click"
+
+	t.Run("rejects non-POST methods", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/unsubscribe-oneclick?"+validQuery, strings.NewReader(oneClickBody))
+		rec := httptest.NewRecorder()
+		handler.handleUnsubscribeOneClick(rec, req)
+		assert.Equal(t, http.StatusMethodNotAllowed, rec.Code)
+		assert.JSONEq(t, `{"error":"Method not allowed"}`, rec.Body.String())
+	})
+
+	// The unsubscribe must succeed for ANY User-Agent as long as the RFC 8058 token is
+	// present - including automated callers (curl, Go stdlib, empty UA, even a security
+	// scanner) that mail-provider backends use. This is the regression guard for the
+	// bot-detection silent-no-op found in review: curl/empty/stdlib UAs were dropped,
+	// returning 200 while leaving the contact subscribed (issue #362).
+	uaCases := []struct{ name, ua, contentType string }{
+		{"browser UA", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "application/x-www-form-urlencoded"},
+		{"curl UA (issue #362 reproduction)", "curl/8.4.0", "application/x-www-form-urlencoded"},
+		{"Go stdlib UA", "Go-http-client/1.1", "application/x-www-form-urlencoded"},
+		{"empty UA (provider backend)", "", "application/x-www-form-urlencoded"},
+		{"email security scanner UA", "Proofpoint Email Security Scanner", "application/x-www-form-urlencoded"},
+		{"text/plain body carrying the token", "Mozilla/5.0", "text/plain"},
 	}
+	for _, uc := range uaCases {
+		t.Run("unsubscribes regardless of UA: "+uc.name, func(t *testing.T) {
+			var captured *domain.UnsubscribeFromListsRequest
+			mockListService.EXPECT().
+				UnsubscribeFromLists(gomock.Any(), gomock.Any(), false).
+				DoAndReturn(func(_ context.Context, p *domain.UnsubscribeFromListsRequest, _ bool) error {
+					captured = p
+					return nil
+				})
 
-	tests := []struct {
-		name               string
-		method             string
-		requestBody        interface{}
-		userAgent          string
-		setupMock          func()
-		expectedStatusCode int
-		expectedResponse   string
-	}{
-		{
-			name:               "method not allowed",
-			method:             http.MethodGet,
-			requestBody:        nil,
-			setupMock:          func() {},
-			expectedStatusCode: http.StatusMethodNotAllowed,
-			expectedResponse:   `{"error":"Method not allowed"}`,
-		},
-		{
-			name:               "invalid request body - not JSON",
-			method:             http.MethodPost,
-			requestBody:        "invalid json",
-			setupMock:          func() {},
-			expectedStatusCode: http.StatusBadRequest,
-			expectedResponse:   `{"error":"Invalid request body"}`,
-		},
-		{
-			name:        "service returns error",
-			method:      http.MethodPost,
-			requestBody: validRequest,
-			userAgent:   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-			setupMock: func() {
-				mockListService.EXPECT().
-					UnsubscribeFromLists(gomock.Any(), gomock.Any(), false).
-					Return(errors.New("unsubscribe failed"))
-			},
-			expectedStatusCode: http.StatusInternalServerError,
-			expectedResponse:   `{"error":"Failed to unsubscribe from lists"}`,
-		},
-		{
-			name:        "successful request",
-			method:      http.MethodPost,
-			requestBody: validRequest,
-			userAgent:   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-			setupMock: func() {
-				mockListService.EXPECT().
-					UnsubscribeFromLists(gomock.Any(), gomock.Any(), false).
-					Return(nil)
-			},
-			expectedStatusCode: http.StatusOK,
-			expectedResponse:   `{"success":true}`,
-		},
-		{
-			name:        "bot user agent - returns success without unsubscribing",
-			method:      http.MethodPost,
-			requestBody: validRequest,
-			userAgent:   "Mozilla/5.0 (compatible; SafeLinks/1.0; +http://www.microsoft.com/safelinks)",
-			setupMock: func() {
-				// No mock expectation - service should not be called for bots
-			},
-			expectedStatusCode: http.StatusOK,
-			expectedResponse:   `{"success":true}`,
-		},
-		{
-			name:        "email scanner bot - returns success without unsubscribing",
-			method:      http.MethodPost,
-			requestBody: validRequest,
-			userAgent:   "Proofpoint Email Security Scanner",
-			setupMock: func() {
-				// No mock expectation - service should not be called for bots
-			},
-			expectedStatusCode: http.StatusOK,
-			expectedResponse:   `{"success":true}`,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			tc.setupMock()
-
-			var body []byte
-			var err error
-			if tc.requestBody != nil {
-				switch v := tc.requestBody.(type) {
-				case string:
-					body = []byte(v)
-				default:
-					body, err = json.Marshal(tc.requestBody)
-					require.NoError(t, err)
-				}
-			}
-
-			req := httptest.NewRequest(tc.method, "/unsubscribe-oneclick", bytes.NewBuffer(body))
-			req.Header.Set("Content-Type", "application/json")
-			if tc.userAgent != "" {
-				req.Header.Set("User-Agent", tc.userAgent)
+			req := httptest.NewRequest(http.MethodPost, "/unsubscribe-oneclick?"+validQuery, strings.NewReader(oneClickBody))
+			req.Header.Set("Content-Type", uc.contentType)
+			if uc.ua != "" {
+				req.Header.Set("User-Agent", uc.ua)
 			}
 			rec := httptest.NewRecorder()
 
 			handler.handleUnsubscribeOneClick(rec, req)
 
-			assert.Equal(t, tc.expectedStatusCode, rec.Code)
-			assert.JSONEq(t, tc.expectedResponse, rec.Body.String())
+			assert.Equal(t, http.StatusOK, rec.Code)
+			assert.JSONEq(t, `{"success":true}`, rec.Body.String())
+			require.NotNil(t, captured, "service must be called - the contact must actually be unsubscribed")
+			assert.Equal(t, "ws123", captured.WorkspaceID)
+			assert.Equal(t, "test@example.com", captured.Email)
+			assert.Equal(t, "deadbeef", captured.EmailHMAC)
+			assert.Equal(t, []string{"list1"}, captured.ListIDs)
+			assert.Equal(t, "msg-1", captured.MessageID)
 		})
 	}
+
+	// RFC 8058 (section 3.1) requires the body to carry "List-Unsubscribe=One-Click".
+	// A POST without it (a bare prefetch/scanner POST, or empty body) is rejected with
+	// 400 - never a silent 200 that leaves the contact subscribed. The service is never
+	// called, asserted by the absence of a mock expectation (gomock fails on any call).
+	rejectCases := []struct{ name, contentType, body string }{
+		{"empty body", "application/x-www-form-urlencoded", ""},
+		{"stray JSON without token", "application/json", `{"foo":"bar"}`},
+		{"wrong token value", "application/x-www-form-urlencoded", "List-Unsubscribe=Two-Click"},
+	}
+	for _, rc := range rejectCases {
+		t.Run("rejects POST missing the RFC 8058 token: "+rc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/unsubscribe-oneclick?"+validQuery, strings.NewReader(rc.body))
+			req.Header.Set("Content-Type", rc.contentType)
+			req.Header.Set("User-Agent", "Mozilla/5.0")
+			rec := httptest.NewRecorder()
+			handler.handleUnsubscribeOneClick(rec, req)
+			assert.Equal(t, http.StatusBadRequest, rec.Code)
+		})
+	}
+
+	t.Run("rejects request missing required query params", func(t *testing.T) {
+		// Token present, but wid and lids are missing -> malformed link -> 400, no service call.
+		req := httptest.NewRequest(http.MethodPost, "/unsubscribe-oneclick?email=test%40example.com",
+			strings.NewReader(oneClickBody))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("User-Agent", "Mozilla/5.0")
+		rec := httptest.NewRecorder()
+		handler.handleUnsubscribeOneClick(rec, req)
+		assert.Equal(t, http.StatusBadRequest, rec.Code)
+	})
+
+	t.Run("service error returns 500", func(t *testing.T) {
+		mockListService.EXPECT().
+			UnsubscribeFromLists(gomock.Any(), gomock.Any(), false).
+			Return(errors.New("unsubscribe failed"))
+
+		req := httptest.NewRequest(http.MethodPost, "/unsubscribe-oneclick?"+validQuery, strings.NewReader(oneClickBody))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("User-Agent", "Mozilla/5.0")
+		rec := httptest.NewRecorder()
+		handler.handleUnsubscribeOneClick(rec, req)
+		assert.Equal(t, http.StatusInternalServerError, rec.Code)
+		assert.JSONEq(t, `{"error":"Failed to unsubscribe from lists"}`, rec.Body.String())
+	})
 }
 
 // Mock logger for testing

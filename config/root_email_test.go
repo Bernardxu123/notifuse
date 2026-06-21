@@ -95,6 +95,28 @@ func TestIsRootEmail(t *testing.T) {
 	}
 }
 
+func TestIsRootEmailInsensitive(t *testing.T) {
+	testCases := []struct {
+		name      string
+		setting   string
+		candidate string
+		expected  bool
+	}{
+		{name: "exact match", setting: "alice@example.com", candidate: "alice@example.com", expected: true},
+		{name: "case-folded match (config upper, candidate lower)", setting: "Alice@Example.com", candidate: "alice@example.com", expected: true},
+		{name: "case-folded match (config lower, candidate upper)", setting: "alice@example.com", candidate: "ALICE@example.com", expected: true},
+		{name: "member of list case-folded", setting: "Alice@example.com,Bob@example.com", candidate: "bob@example.com", expected: true},
+		{name: "non-member", setting: "alice@example.com", candidate: "carol@example.com", expected: false},
+		{name: "empty candidate never matches", setting: "alice@example.com", candidate: "", expected: false},
+		{name: "empty setting never matches", setting: "", candidate: "alice@example.com", expected: false},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, IsRootEmailInsensitive(tc.setting, tc.candidate))
+		})
+	}
+}
+
 func TestPrimaryRootEmail(t *testing.T) {
 	testCases := []struct {
 		name     string

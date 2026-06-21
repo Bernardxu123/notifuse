@@ -1,4 +1,4 @@
-import { api } from './client'
+import { api, ApiError } from './client'
 import type { Workspace } from './workspace'
 
 // Authentication types
@@ -61,9 +61,39 @@ export interface UpdateLanguageResponse {
   message: string
 }
 
+/**
+ * Complete the OIDC Authorization-Code login by exchanging the one-time code for the
+ * internal session JWT. The code is read from the URL fragment by the caller
+ * (SignInPage) and passed here in the REQUEST BODY — no cookie is used, so this works
+ * across split console/API origins (the shared api.post() can't carry the dedicated
+ * cross-origin fetch). Returns the JWT, identical in shape to verifyCode().
+ */
+async function oidcExchange(code: string): Promise<VerifyResponse> {
+  let defaultOrigin = window.location.origin
+  if (defaultOrigin.includes('notifusedev.com')) {
+    defaultOrigin = 'https://localapi.notifuse.com:4000'
+  }
+  const apiEndpoint = window.API_ENDPOINT?.trim().replace(/\/+$/, '') || defaultOrigin
+
+  const response = await fetch(`${apiEndpoint}/api/user.oidc.exchange`, {
+    method: 'POST',
+    // NOTE: no `credentials` — the code is in the body, not a cookie, so this
+    // succeeds cross-origin under the existing CORS (* origin + Bearerless) posture.
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code })
+  })
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => null)
+    throw new ApiError(errorData?.error || 'OIDC exchange failed', response.status, errorData)
+  }
+  return response.json() as Promise<VerifyResponse>
+}
+
 export const authService = {
   signIn: (data: SignInRequest) => api.post<SignInResponse>('/api/user.signin', data),
   verifyCode: (data: VerifyCodeRequest) => api.post<VerifyResponse>('/api/user.verify', data),
+  oidcExchange,
   getCurrentUser: () => api.get<GetCurrentUserResponse>('/api/user.me'),
   logout: () => api.post<LogoutResponse>('/api/user.logout', {}),
   updateLanguage: (language: string) =>

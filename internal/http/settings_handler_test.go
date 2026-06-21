@@ -11,6 +11,7 @@ import (
 
 	"github.com/Notifuse/notifuse/internal/domain"
 	"github.com/Notifuse/notifuse/internal/service"
+	"github.com/Notifuse/notifuse/pkg/crypto"
 	"github.com/Notifuse/notifuse/pkg/logger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -748,4 +749,101 @@ func TestSettingsHandler_RegisterRoutes(t *testing.T) {
 			assert.NotEqual(t, http.StatusNotFound, w.Code)
 		})
 	}
+}
+
+// TestSettingsHandler_Update_InvalidOIDCConfigRejected ensures an invalid OIDC config
+// is rejected with 400 BEFORE persist+restart, instead of bricking the server on the
+// next boot (config.OIDCConfig.Validate would abort startup).
+func TestSettingsHandler_Update_InvalidOIDCConfigRejected(t *testing.T) {
+	handler, settingRepo, _, shutdowner := setupSettingsHandler(t)
+
+	ctx := context.Background()
+	_ = settingRepo.Set(ctx, "is_installed", "true")
+	_ = settingRepo.Set(ctx, "root_email", testRootEmail)
+
+	// OIDC enabled but issuer/client/secret missing -> Validate must fail.
+	bad := SystemSettingsData{
+		RootEmail:    testRootEmail,
+		APIEndpoint:  "https://app.example.com",
+		OIDCEnabled:  true,
+		OIDCClientID: "",
+	}
+	body, _ := json.Marshal(bad)
+	req := httptest.NewRequest(http.MethodPost, "/api/settings.update", bytes.NewBuffer(body))
+	req = reqWithUserContext(req, "root-user-id")
+	w := httptest.NewRecorder()
+	handler.handleUpdate(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, "invalid OIDC config must be rejected, not persisted")
+	assert.False(t, shutdowner.shutdownCalled, "no restart may be triggered for a rejected config")
+	assert.Empty(t, settingRepo.settings["oidc_enabled"], "nothing may be persisted for a rejected config")
+
+	// Auto-create with no allowlist must also be rejected.
+	bad2 := SystemSettingsData{
+		RootEmail:           testRootEmail,
+		APIEndpoint:         "https://app.example.com",
+		OIDCEnabled:         true,
+		OIDCIssuerURL:       "https://idp.example.com",
+		OIDCClientID:        "cid",
+		OIDCClientSecret:    "secret",
+		OIDCAutoCreateUsers: true,
+		OIDCAllowedDomains:  "",
+	}
+	body2, _ := json.Marshal(bad2)
+	req2 := httptest.NewRequest(http.MethodPost, "/api/settings.update", bytes.NewBuffer(body2))
+	req2 = reqWithUserContext(req2, "root-user-id")
+	w2 := httptest.NewRecorder()
+	handler.handleUpdate(w2, req2)
+	assert.Equal(t, http.StatusBadRequest, w2.Code, "JIT without an allowlist must be rejected")
+}
+
+// TestSettingsHandler_Update_OIDCSecretMaskRetainsExisting proves the OIDC client
+// secret survives a settings save that submits the mask sentinel (the operator opened
+// the drawer and clicked Save without re-typing the secret). A regression here would
+// silently overwrite the stored secret with the mask literal and break SSO for everyone.
+func TestSettingsHandler_Update_OIDCSecretMaskRetainsExisting(t *testing.T) {
+	handler, settingRepo, _, _ := setupSettingsHandler(t)
+
+	ctx := context.Background()
+	_ = settingRepo.Set(ctx, "is_installed", "true")
+	_ = settingRepo.Set(ctx, "root_email", testRootEmail)
+
+	valid := SystemSettingsData{
+		RootEmail:        testRootEmail,
+		APIEndpoint:      "https://app.example.com",
+		OIDCEnabled:      true,
+		OIDCIssuerURL:    "https://idp.example.com",
+		OIDCClientID:     "cid",
+		OIDCClientSecret: "real-oidc-secret",
+	}
+	body, _ := json.Marshal(valid)
+	req := httptest.NewRequest(http.MethodPost, "/api/settings.update", bytes.NewBuffer(body))
+	req = reqWithUserContext(req, "root-user-id")
+	w := httptest.NewRecorder()
+	handler.handleUpdate(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	encrypted := settingRepo.settings["encrypted_oidc_client_secret"]
+	require.NotEmpty(t, encrypted)
+	require.NotEqual(t, "real-oidc-secret", encrypted, "secret must be encrypted at rest")
+
+	// Second save with the mask sentinel + an unrelated change must NOT touch the secret.
+	masked := valid
+	masked.OIDCClientSecret = passwordMask
+	masked.OIDCButtonLabel = "Sign in with Acme"
+	body2, _ := json.Marshal(masked)
+	req2 := httptest.NewRequest(http.MethodPost, "/api/settings.update", bytes.NewBuffer(body2))
+	req2 = reqWithUserContext(req2, "root-user-id")
+	w2 := httptest.NewRecorder()
+	handler.handleUpdate(w2, req2)
+	require.Equal(t, http.StatusOK, w2.Code)
+
+	// Assert the underlying SECRET (plaintext) is preserved. We decrypt rather than
+	// compare ciphertext because AES-GCM re-encrypts with a fresh random nonce, so the
+	// ciphertext legitimately changes even when the secret is retained.
+	stored, derr := crypto.DecryptFromHexString(settingRepo.settings["encrypted_oidc_client_secret"], testSecretKey)
+	require.NoError(t, derr)
+	assert.Equal(t, "real-oidc-secret", stored,
+		"submitting the mask sentinel must retain the existing OIDC client secret")
+	assert.Equal(t, "Sign in with Acme", settingRepo.settings["oidc_button_label"], "the unrelated change must persist")
 }

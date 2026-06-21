@@ -236,6 +236,99 @@ func TestUnsubscribeFromListsRequest_FromURLParams_ExistingFile(t *testing.T) {
 	}
 }
 
+func TestUnsubscribeFromListsRequest_FromOneClickURLParams(t *testing.T) {
+	// The keys here mirror exactly what BuildTemplateData writes into the one-click
+	// List-Unsubscribe URL: wid, email, email_hmac, lids, mid.
+	t.Run("parses all params from the query string", func(t *testing.T) {
+		vals := url.Values{}
+		vals.Set("wid", "ws123")
+		vals.Set("email", "user@example.com")
+		vals.Set("email_hmac", "deadbeef")
+		vals.Set("lids", "list1")
+		vals.Set("mid", "msg-1")
+
+		var req UnsubscribeFromListsRequest
+		err := req.FromOneClickURLParams(vals)
+		assert.NoError(t, err)
+		assert.Equal(t, "ws123", req.WorkspaceID)
+		assert.Equal(t, "user@example.com", req.Email)
+		assert.Equal(t, "deadbeef", req.EmailHMAC)
+		assert.Equal(t, []string{"list1"}, req.ListIDs)
+		assert.Equal(t, "msg-1", req.MessageID)
+	})
+
+	t.Run("supports multiple lids", func(t *testing.T) {
+		vals := url.Values{}
+		vals.Set("wid", "ws123")
+		vals.Set("email", "user@example.com")
+		vals["lids"] = []string{"list1", "list2"}
+
+		var req UnsubscribeFromListsRequest
+		err := req.FromOneClickURLParams(vals)
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"list1", "list2"}, req.ListIDs)
+	})
+
+	t.Run("email_hmac and mid are optional at parse time", func(t *testing.T) {
+		// Authentication (email_hmac) is verified by the service, and mid is only used
+		// for analytics; the parser only requires enough to identify contact + lists.
+		vals := url.Values{}
+		vals.Set("wid", "ws123")
+		vals.Set("email", "user@example.com")
+		vals.Set("lids", "list1")
+
+		var req UnsubscribeFromListsRequest
+		err := req.FromOneClickURLParams(vals)
+		assert.NoError(t, err)
+		assert.Empty(t, req.EmailHMAC)
+		assert.Empty(t, req.MessageID)
+	})
+
+	t.Run("does not accept the legacy snake_case keys", func(t *testing.T) {
+		// Regression guard: the legacy FromURLParams reads workspace_id/list_ids, which
+		// silently produced an empty request when fed a one-click URL. The one-click
+		// parser must reject those keys.
+		vals := url.Values{}
+		vals.Set("workspace_id", "ws123")
+		vals.Set("email", "user@example.com")
+		vals["list_ids"] = []string{"list1"}
+
+		var req UnsubscribeFromListsRequest
+		assert.Error(t, req.FromOneClickURLParams(vals))
+	})
+
+	errorCases := []struct {
+		name string
+		vals url.Values
+	}{
+		{"missing wid", func() url.Values {
+			v := url.Values{}
+			v.Set("email", "user@example.com")
+			v.Set("lids", "list1")
+			return v
+		}()},
+		{"missing email", func() url.Values {
+			v := url.Values{}
+			v.Set("wid", "ws123")
+			v.Set("lids", "list1")
+			return v
+		}()},
+		{"missing lids", func() url.Values {
+			v := url.Values{}
+			v.Set("wid", "ws123")
+			v.Set("email", "user@example.com")
+			return v
+		}()},
+		{"empty query", url.Values{}},
+	}
+	for _, tc := range errorCases {
+		t.Run("rejects "+tc.name, func(t *testing.T) {
+			var req UnsubscribeFromListsRequest
+			assert.Error(t, req.FromOneClickURLParams(tc.vals))
+		})
+	}
+}
+
 func TestCreateListRequest_Validate(t *testing.T) {
 	tests := []struct {
 		name     string

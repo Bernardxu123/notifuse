@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/Notifuse/notifuse/internal/domain"
-	"github.com/Notifuse/notifuse/pkg/botdetection"
 	pkgDatabase "github.com/Notifuse/notifuse/pkg/database"
 	"github.com/Notifuse/notifuse/pkg/logger"
 	"github.com/Notifuse/notifuse/pkg/ratelimiter"
@@ -213,23 +212,30 @@ func (h *NotificationCenterHandler) handleUnsubscribeOneClick(w http.ResponseWri
 		return
 	}
 
-	// this is one-click unsubscribe from GMAIL header link
-
+	// RFC 8058 one-click unsubscribe (e.g. the Gmail/Yahoo List-Unsubscribe header
+	// link). Per RFC 8058 (section 2.1) the unsubscribe parameters are carried in the
+	// URL query string (not the POST body); read them from the query here, then
+	// validate the required RFC 8058 body token below.
 	var req domain.UnsubscribeFromListsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.logger.WithField("error", err.Error()).Error("Failed to decode request body")
-		WriteJSONError(w, "Invalid request body", http.StatusBadRequest)
+	if err := req.FromOneClickURLParams(r.URL.Query()); err != nil {
+		h.logger.WithField("error", err.Error()).Error("Invalid one-click unsubscribe request")
+		WriteJSONError(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 
-	// Bot detection: check user agent before processing unsubscribe
-	userAgent := r.Header.Get("User-Agent")
-	if botdetection.IsBotUserAgent(userAgent) {
-		// Return success without actually unsubscribing to avoid revealing bot detection
-		h.logger.WithField("user_agent", userAgent).Debug("Bot detected by user agent - not processing unsubscribe")
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"success": true,
-		})
+	// RFC 8058 (section 3.1): the POST body is application/x-www-form-urlencoded
+	// containing "List-Unsubscribe=One-Click". Requiring that token is the
+	// defense-in-depth against link-prefetchers and security scanners that fire a
+	// bare POST: a conformant one-click request always carries it. We do NOT apply
+	// User-Agent bot detection here - an RFC 8058 POST is always machine-generated
+	// by the mail provider, so a UA blocklist only drops legitimate unsubscribes
+	// (the contact stays subscribed while the provider sees success). A missing
+	// token is a real 400, never a silent success. Authorization is the HMAC below.
+	bodyBytes, _ := io.ReadAll(io.LimitReader(r.Body, 4096))
+	if !strings.Contains(string(bodyBytes), "List-Unsubscribe=One-Click") {
+		h.logger.WithField("user_agent", r.Header.Get("User-Agent")).
+			Warn("One-click unsubscribe POST missing RFC 8058 List-Unsubscribe=One-Click token")
+		WriteJSONError(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 

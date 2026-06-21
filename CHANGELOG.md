@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [34.0] - 2026-06-20
+
+- **Feature**: Single Sign-On via OpenID Connect (OIDC) alongside magic-code login — off by default and enabled per deployment with `OIDC_*` env vars, the setup wizard, or Settings → SSO (client secret encrypted at rest), so the sign-in page shows an SSO button only when it is turned on. Invited-users-only by default with opt-in just-in-time provisioning gated by a verified-email domain allowlist; identities are keyed on the durable issuer+subject pair (never email alone) and login still requires a workspace invite or `ROOT_EMAIL` for access. Uses Authorization Code + PKCE and works with any compliant provider (Google Workspace, Keycloak, Okta, …); adds the `federated_identities` system table (migration v34).
+- **Fix**: One-click unsubscribe (RFC 8058) now works end-to-end. The `/unsubscribe-oneclick` endpoint takes its parameters from the `List-Unsubscribe` URL query string — it previously tried to JSON-decode the POST body and rejected every mail-client request with `400 "Invalid request body"`. The emitted URL now also carries the `email_hmac` the endpoint verifies. And the endpoint no longer applies User-Agent bot detection, which silently dropped the automated POSTs that Gmail/Yahoo/Apple (and tools like `curl`) actually send (returning `200` while leaving the contact subscribed); it instead requires the RFC 8058 `List-Unsubscribe=One-Click` body token to deflect bare prefetch/scanner POSTs (#362).
+
 ## [33.2] - 2026-06-19
 
 - **Feature**: Google Gemini is now a selectable LLM provider for the AI agent (blog & email generation), alongside Anthropic and OpenAI — configure it under Settings → Integrations with a Gemini API key and model (default Gemini 3.1 Pro); when multiple LLM integrations are configured, a provider dropdown in the AI chat selects which to use.

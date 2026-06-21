@@ -1768,6 +1768,24 @@ func TestBuildTemplateData(t *testing.T) {
 		assert.Contains(t, notificationCenterURL, "wid=ws-123")
 		assert.NotContains(t, notificationCenterURL, "action=") // Should not contain action parameter
 		assert.NotContains(t, notificationCenterURL, "lid=")    // Should not contain list ID
+
+		// Check one-click unsubscribe URL (RFC 8058). This is the URL placed in the
+		// List-Unsubscribe header and POSTed by mail clients. It MUST carry email_hmac:
+		// the public /unsubscribe-oneclick endpoint has no bearer token, so the service
+		// authenticates the request by verifying this HMAC against the workspace secret
+		// key. Without it the unsubscribe is rejected (see ListService.UnsubscribeFromLists).
+		oneclickURL, ok := data["oneclick_unsubscribe_url"].(string)
+		assert.True(t, ok)
+		assert.Contains(t, oneclickURL, "https://api.example.com/unsubscribe-oneclick")
+		parsedOneclick, parseErr := url.Parse(oneclickURL)
+		assert.NoError(t, parseErr)
+		oneclickQuery := parsedOneclick.Query()
+		assert.Equal(t, "test@example.com", oneclickQuery.Get("email"))
+		assert.Equal(t, "list-789", oneclickQuery.Get("lids"))
+		assert.Equal(t, "ws-123", oneclickQuery.Get("wid"))
+		assert.Equal(t, "msg-456", oneclickQuery.Get("mid"))
+		assert.Equal(t, ComputeEmailHMAC("test@example.com", workspaceSecretKey), oneclickQuery.Get("email_hmac"),
+			"one-click URL must include a valid email_hmac or the unsubscribe will be rejected by the service")
 	})
 
 	t.Run("with minimal data", func(t *testing.T) {

@@ -39,6 +39,9 @@ export interface ContactsSearch {
 
 export interface SignInSearch {
   email?: string
+  // OIDC failure flag (non-secret enum). The success one-time code arrives in the
+  // URL fragment (#oidc_code=…), which is NOT a search param, so it is not listed here.
+  oidc_error?: string
 }
 
 export interface AcceptInvitationSearch {
@@ -77,7 +80,8 @@ const signinRoute = createRoute({
   path: '/console/signin',
   component: SignInPage,
   validateSearch: (search: Record<string, unknown>): SignInSearch => ({
-    email: search.email as string | undefined
+    email: search.email as string | undefined,
+    oidc_error: typeof search.oidc_error === 'string' ? search.oidc_error : undefined
   })
 })
 
