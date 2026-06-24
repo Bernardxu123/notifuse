@@ -45,7 +45,7 @@ msgstr "（原件：{0}）"
 #. placeholder {0}: progress.total
 #: src/components/contacts/BulkActionProgressModal.tsx:79
 msgid "{0, plural, one {# contact} other {# contacts}}"
-msgstr "{0，复数，一个 {# 联系人} 其他 {# 联系人}}"
+msgstr "{0, plural,one {# 联系人} other {# 联系人}}"
 
 #. placeholder {0}: previewResponse.total_count
 #: src/components/segment/button_upsert.tsx:602
@@ -189,13 +189,13 @@ msgstr "退订总数为 {0}（在图表中隐藏）"
 #. placeholder {1}: range[1]
 #: src/pages/AutomationsPage.tsx:223
 msgid "{0}-{1} of {total} automations"
-msgstr "{0}-{1} 次自动化，共 {total} 次"
+msgstr "{0}-{1} 次自动化,共 {total} 次"
 
 #. placeholder {0}: range[0]
 #. placeholder {1}: range[1]
 #: src/pages/BroadcastsPage.tsx:1524
 msgid "{0}-{1} of {total} broadcasts"
-msgstr "{0}-{1} 个广播，共 {total} 个广播"
+msgstr "{0}-{1} 个广播,共 {total} 个广播"
 
 #: src/pages/BroadcastsPage.tsx:811
 msgid "{clicks} clicks out of {recipients} recipients"
@@ -238,7 +238,7 @@ msgstr "{秒}秒"
 msgid ""
 "{selectedCount, plural, one {# contact selected} other {# contacts "
 "selected}}"
-msgstr "{selectedCount，复数，一个 {# 个已选择的联系人} other {# 个已选择的联系人}}"
+msgstr "{selectedCount, plural,one {# 个已选择的联系人} other {# 个已选择的联系人}}"
 
 #: src/components/contacts/BulkActionsBar.tsx:230
 msgid ""
@@ -246,7 +246,7 @@ msgid ""
 "action cannot be undone.} other {This will permanently delete # contacts. "
 "This action cannot be undone.}}"
 msgstr ""
-"{selectedCount, 复数, 一个 {这将永久删除 # 个联系人。此操作无法撤消。} other {这将永久删除 # "
+"{selectedCount, plural, one {这将永久删除 # 个联系人。此操作无法撤消。} other {这将永久删除 # "
 "个联系人。此操作无法撤消。}}"
 
 #: src/components/email_builder/panels/Preview.tsx:218
@@ -1906,7 +1906,7 @@ msgstr "点击率"
 msgid ""
 "Click Register Webhooks to set up reply forwarding, then point your domain's"
 " MX records at {mxTarget}."
-msgstr "单击注册 Webhooks 以设置回复转发，然后将您域的 MX 记录指向 {mxTarget}。"
+msgstr "单击注册 Webhooks 以设置回复转发,然后将您域的 MX 记录指向 {mxTarget}。"
 
 #: src/components/contacts/BulkUpdateDrawer.tsx:701
 msgid "Click Resume to continue processing"
@@ -3043,7 +3043,7 @@ msgstr "已删除 {deletedCount} 项"
 
 #: src/components/file_manager/fileManager.tsx:610
 msgid "Deleted {deletedCount}, failed {failedCount}"
-msgstr "已删除 {deletedCount}，失败 {failedCount}"
+msgstr "已删除 {deletedCount},失败 {failedCount}"
 
 #: src/components/settings/Integrations.tsx:248
 #: src/components/timeline/ContactTimeline.tsx:502
@@ -3971,7 +3971,7 @@ msgstr "错误"
 #. placeholder {1}: failureCount.toLocaleString()
 #: src/components/contacts/ContactsCsvUploadDrawer.tsx:896
 msgid "Errors ({0} of {1} shown)"
-msgstr "错误（显示了 {0} 个，共 {1} 个）"
+msgstr "错误（显示了 {0} 个,共 {1} 个）"
 
 #: src/components/timeline/ContactTimeline.tsx:587
 #: src/components/webhooks/OutgoingWebhooksTab.tsx:347
@@ -5336,7 +5336,7 @@ msgstr "已导入 {0} 个联系人"
 #: src/components/contacts/ContactsCsvUploadDrawer.tsx:532
 #: src/components/contacts/ContactsCsvUploadDrawer.tsx:691
 msgid "Imported {0} contacts ({1} failed, see details below)"
-msgstr "已导入 {0} 个联系人（{1} 失败，请参阅下面的详细信息）"
+msgstr "已导入 {0} 个联系人（{1} 失败,请参阅下面的详细信息）"
 
 #: src/components/email_builder/ui/FontStyleInput.tsx:87
 msgid "Imported Fonts"
@@ -5549,7 +5549,7 @@ msgstr "网址格式无效"
 #: src/components/email_builder/ui/StringPopoverInput.tsx:90
 msgid ""
 "Invalid URL format. Use a valid URL or liquid expression like {{ variable }}"
-msgstr "网址格式无效。使用有效的 URL 或流式表达式，例如 {{ variable }}"
+msgstr "网址格式无效。使用有效的 URL 或流式表达式,例如 {{ variable }}"
 
 #: src/components/blog_editor/components/youtube/YoutubeNodeView.tsx:703
 msgid "Invalid YouTube URL"
@@ -7574,17 +7574,17 @@ msgstr "已加工"
 #: src/components/contacts/BulkUpdateDrawer.tsx:752
 #: src/components/contacts/ContactsCsvUploadDrawer.tsx:887
 msgid "Processed {0} contacts: {1} successful, {2} failed"
-msgstr "已处理 {0} 个联系人：{1} 成功，{2} 失败"
+msgstr "已处理 {0} 个联系人：{1} 成功,{2} 失败"
 
 #: src/components/contacts/BulkUpdateDrawer.tsx:372
 msgid "Processed {successful} contacts successfully, {failed} failed"
-msgstr "已成功处理 {success} 个联系人，{failed} 失败"
+msgstr "已成功处理 {success} 个联系人,{failed} 失败"
 
 #. placeholder {0}: currentRow.toLocaleString()
 #. placeholder {1}: totalRows.toLocaleString()
 #: src/components/contacts/ContactsCsvUploadDrawer.tsx:867
 msgid "Processing batch {currentBatch} of {totalBatches} ({0} of {1} rows)"
-msgstr "正在处理批次 {currentBatch}，共 {totalBatches}（共 {0} 行，共 {1} 行）"
+msgstr "正在处理批次 {currentBatch},共 {totalBatches}（共 {0} 行,共 {1} 行）"
 
 #: src/components/contacts/SegmentsFilter.tsx:84
 msgid "Processing contacts"
@@ -10038,7 +10038,7 @@ msgstr "此部分为空。添加列或组来显示内容。"
 msgid ""
 "This segment uses relative date filters and will be automatically recomputed"
 " daily at 5:00 AM ({timezone})"
-msgstr "该细分使用相对日期过滤器，并将在每天凌晨 5:00 ({timezone}) 自动重新计算"
+msgstr "该细分使用相对日期过滤器,并将在每天凌晨 5:00 ({timezone}) 自动重新计算"
 
 #: src/components/broadcasts/UpsertBroadcastDrawer.tsx:754
 msgid "This template is already used in another variation"
@@ -10072,7 +10072,7 @@ msgstr "这将使当前秘密失效。您需要更新您的 webhook 接收器。
 msgid ""
 "This will permanently delete the workspace \"{0}\" and all of its data. To "
 "confirm, please enter the workspace ID:"
-msgstr "这将永久删除工作区“{0}”及其所有数据。要确认，请输入工作区 ID："
+msgstr "这将永久删除工作区“{0}”及其所有数据。要确认,请输入工作区 ID："
 
 #: src/components/contacts/DeleteContactModal.tsx:50
 msgid "This will permanently remove the contact and their subscriptions."
@@ -10212,7 +10212,7 @@ msgstr "防止重复发送"
 msgid ""
 "To use the {0}, you need to configure the Anthropic integration in your "
 "workspace settings."
-msgstr "要使用 {0}，您需要在工作区设置中配置 Anthropic 集成。"
+msgstr "要使用 {0},您需要在工作区设置中配置 Anthropic 集成。"
 
 #: src/components/email_builder/blocks/MjmlBlock.tsx:15
 msgid "TODO"
