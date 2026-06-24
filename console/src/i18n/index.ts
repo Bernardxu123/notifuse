@@ -46,6 +46,9 @@ export function getInitialLocale(): Locale {
   if (stored && locales.includes(stored as Locale)) {
     return stored as Locale
   }
+  // Default to browser language, fallback to zh-CN for Chinese users
+  const browserLang = navigator.language
+  if (browserLang.startsWith('zh')) return 'zh-CN'
   return "en"
 }
 
