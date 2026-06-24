@@ -11,6 +11,7 @@ import frFR from 'antd/locale/fr_FR'
 import esES from 'antd/locale/es_ES'
 import deDE from 'antd/locale/de_DE'
 import caES from 'antd/locale/ca_ES'
+import zhCN from 'antd/locale/zh_CN'
 import type { Locale as AntdLocale } from 'antd/es/locale'
 import type { Locale } from './i18n'
 
@@ -20,6 +21,7 @@ const antdLocales: Record<Locale, AntdLocale> = {
   es: esES,
   de: deDE,
   ca: caES,
+  "zh-CN": zhCN,
 }
 
 const queryClient = new QueryClient({
