@@ -31,5 +31,5 @@ jobs:
           file: ./Dockerfile
           platforms: linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository }}:latest
+          tags: ghcr.io/bernardxu123/notifuse:latest
           no-cache: true
